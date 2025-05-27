@@ -1,9 +1,9 @@
 import React, { ReactNode, useState } from 'react';
-import { BsPlus } from 'react-icons/bs';
+import { TbMask } from "react-icons/tb";
 import { IoLayersOutline } from "react-icons/io5";
 import PageTool from './sidebarComponents/PageTool'
 import './SideBar.css'
-
+import MaskTool from './sidebarComponents/MaskTool' 
 
 
 const SideBar = ({sideBarStateChange}: {sideBarStateChange:(sideBarState:string)=>void}) => {
@@ -21,7 +21,7 @@ const SideBar = ({sideBarStateChange}: {sideBarStateChange:(sideBarState:string)
         <div className='fixed left-0 h-[calc(100vh-6rem)] w-16 flex flex-col bg-gray-700 text-white shadow z-20'>
             {/* mask menu */}
             <SideBarIcon icon={<IoLayersOutline size='28'/>} onClick={() => toggleSidebar('pageTool')}/> 
-            <SideBarIcon icon={<BsPlus size='28'/>} onClick={() => toggleSidebar('headCount')}/>
+            <SideBarIcon icon={<TbMask size='28'/>} onClick={() => toggleSidebar('maskTool')}/>
         </div>
 
         {/* sliding bar - adjusted height and added top/bottom margins */}
@@ -31,6 +31,10 @@ const SideBar = ({sideBarStateChange}: {sideBarStateChange:(sideBarState:string)
                 <h2>
                     {sideBarState === 'pageTool' ? (
                         <PageTool/>
+                    ) : sideBarState === 'maskTool' ? (
+                        <>
+                        <MaskTool/>
+                        </>
                     ) : (<div>
                         <p>No Tool selected ISSUE</p>
                     </div>)}
