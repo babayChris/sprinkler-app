@@ -3,15 +3,11 @@ import * as pdfjsLib from 'pdfjs-dist';
 import {usePageContext} from '../contexts/PageContext'
 import {EditProvider, useEditContext} from '../contexts/EditContext'
 
+
 const workerPath: string = '../../pdf/pdf.worker.mjs'
 pdfjsLib.GlobalWorkerOptions.workerSrc = workerPath;
 
 interface PDFViewerProps {
-}
-
-interface PDFPosition {
-  x: number;
-  y: number;
 }
 
 interface CropBox {
@@ -20,6 +16,18 @@ interface CropBox {
   width: number;
   height: number;
 }
+// payload interface
+interface CropPayload {
+  cropBox: CropBox
+}
+
+
+interface PDFPosition {
+  x: number;
+  y: number;
+}
+
+
 
 //helper functions
 function debounce(func: Function, wait: number) {
@@ -31,6 +39,8 @@ function debounce(func: Function, wait: number) {
   (debouncedFunc as any).cancel = () => clearTimeout(timeout);
   return debouncedFunc;
 }
+
+
 
 const PDFViewerContent: React.FC<PDFViewerProps> = () => {
   //pdfUrl
@@ -64,6 +74,13 @@ const PDFViewerContent: React.FC<PDFViewerProps> = () => {
   const [cropBox, setCropBox] = useState<CropBox>({ x: 0, y: 0, width: 0, height: 0 });
   const [isDraggingCrop, setIsDraggingCrop] = useState<boolean>(false);
   const [cropDragOffset, setCropDragOffset] = useState<PDFPosition>({x: 0, y: 0});
+
+  // upload vars
+  const [uploading, setUploading] = useState<boolean>(false);
+
+  // mask vars
+  const [masks, setMasks] = useState<any[]> ([]);
+  const [showMasks, setShowMasks] = useState<boolean>(false);
 
 
 
@@ -211,23 +228,6 @@ const PDFViewerContent: React.FC<PDFViewerProps> = () => {
     }
   }, [pdfDoc, pageNum, pdfCssScale]);
 
-  // const adjustToResize = useCallback(() => {
-  //   if (!pdfDoc || !canvasRef.current || !containerRef.current) return;
-    
-  //   const container = containerRef.current;
-  //   const canvas = canvasRef.current;
-    
-  //   // Get current container dimensions
-  //   const containerWidth = container.clientWidth;
-  //   const containerHeight = container.clientHeight;
-    
-  //   // Update position without re-rendering the PDF
-  //   const centerX = (containerWidth - canvas.width / pdfCssScale) / 2;
-  //   const centerY = (containerHeight - canvas.height / pdfCssScale) / 2;
-    
-  //   setPosition({ x: centerX, y: centerY });
-  // }, [pdfDoc, pdfCssScale]);
-
   //resize useEffect
   useEffect(() => {
     if (!containerRef.current || !pdfDoc) return;
@@ -273,27 +273,6 @@ const PDFViewerContent: React.FC<PDFViewerProps> = () => {
     loadPDf();
   }, [pdfUrl]);
 
-  // Navigation functions
-  // const goToPrevPage = () => {
-  //   if (pageNum <= 1) return;
-  //   const newPageNum = pageNum - 1;
-  //   setPageNum(newPageNum);
-  //   renderPage(newPageNum);
-  // };
-
-  // const goToNextPage = () => {
-  //   if (pageNum >= numPages) return;
-  //   const newPageNum = pageNum + 1;
-  //   setPageNum(newPageNum);
-  //   renderPage(newPageNum);
-  // };
-
-  // const jumpPage = () => {
-  //   if (pageNum >= numPages) return;
-  //   const newPageNum = pageNum + 1;
-  //   setPageNum(newPageNum);
-  //   renderPage(newPageNum);
-  // }
 
   //zoom functions
   const handleWheel = (event: React.WheelEvent) => {
@@ -326,30 +305,137 @@ const PDFViewerContent: React.FC<PDFViewerProps> = () => {
     setCropBox({ x: 0, y: 0, width: 0, height: 0 });
   }, []);
 
-  const applyCrop = useCallback(() => {
-      if (cropBox.width > 0 && cropBox.height > 0) {
-        console.log('Applying crop to PDF:', {
-          page: pageNum,
-          crop: cropBox,
-          pdfScale: pdfCssScale
-        });
-        alert(`Crop applied: ${Math.round(cropBox.width)}×${Math.round(cropBox.height)} at (${Math.round(cropBox.x)}, ${Math.round(cropBox.y)})`);
 
-        // send crop to REST API
-        
+  const sendPDF = async (pdfBlob: Blob, cropData: any, ) => {
+    const formData = new FormData();
+    formData.append('pdf', pdfBlob, 'document.pdf');
+    formData.append('cropData', JSON.stringify(cropData));
+
+    try {
+      const response = await fetch('http://127.0.0.1:8000/upload-pdf', {
+        method: 'POST', //sends/mutates data
+        body: formData //both pdf and crop data
+      })
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
       }
-    }, [cropBox, pageNum, pdfCssScale]);
+      const result = await response.json();
+      console.log('PDF sent! good')
+      return result
+    } catch (error) {
+      console.error('error in uploading (clear crop func): ', error);
+    }
+  }
 
-  //helper func for crop
-  const getRelativeMousePosition = useCallback((e: React.MouseEvent) => {
-    if (!canvasRef.current) return { x: 0, y: 0 };
-    
-    const rect = canvasRef.current.getBoundingClientRect();
-    return {
-      x: (e.clientX - rect.left) / pdfCssScale,
-      y: (e.clientY - rect.top) / pdfCssScale
-    };
-  }, [pdfCssScale]);
+  function canvasToBlob(canvas: HTMLCanvasElement): Promise<Blob> {
+    return new Promise((resolve, reject)=>{
+      canvas.toBlob((blob)=> {
+        if (blob) {
+          resolve(blob)
+        } else {
+          reject(new Error('failed to convert canvas to blob'))
+        }
+      }, 'image/png');
+    })
+  }
+
+  const applyCrop = useCallback(async () => {
+    if (cropBox.width > 0 && cropBox.height > 0) {
+        if (!pdfDoc) {
+          alert('PDF is undefined!');
+          return;
+        }
+
+        // Extract using temporary canvas with high quality
+        try {
+          const page = await pdfDoc.getPage(pageNum);
+          const viewport = page.getViewport({scale: 3});
+          const tempCanvas = document.createElement('canvas');
+          
+          const tempContext = tempCanvas.getContext('2d');
+          if (!tempContext) {
+            throw new Error('Could not get canvas context');
+          }
+          // config temp canvas
+          tempCanvas.width = viewport.width;
+          tempCanvas.height = viewport.height;
+          tempContext.imageSmoothingEnabled = true;
+          tempContext.imageSmoothingQuality = 'high';
+          const renderContext = {
+            canvasContext: tempContext,
+            viewport: viewport,
+            enableWebGL: true,
+            renderInteractiveForms: true,
+            intent: 'display'
+          };
+
+          await page.render(renderContext).promise;
+          const dataBlob = await canvasToBlob(tempCanvas);
+          
+          // crop coords
+          const displayCanvas = canvasRef.current;
+          if (!displayCanvas) throw new Error('Display canvas not available');
+          const displayRect = displayCanvas.getBoundingClientRect();
+          
+          const cropCoordinates = {
+            x: Math.round((cropBox.x / displayRect.width) * tempCanvas.width),
+            y: Math.round((cropBox.y / displayRect.height) * tempCanvas.height),
+            width: Math.round((cropBox.width / displayRect.width) * tempCanvas.width),
+            height: Math.round((cropBox.height / displayRect.height) * tempCanvas.height),
+            canvasWidth: tempCanvas.width,
+            canvasHeight: tempCanvas.height
+          };
+
+          const formData = new FormData();
+          formData.append('image', dataBlob, `page-${pageNum}.png`);
+          formData.append('cropCoordinates', JSON.stringify(cropCoordinates));
+          formData.append('pageNumber', pageNum.toString());
+          // request response after making data
+          const response = await fetch('http://127.0.0.1:8000/upload-pdf', {
+            method: 'POST',
+            body: formData
+          });
+          if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+          }
+          
+          const result = await response.json();
+          // alert(`Crop applied to page ${pageNum}!`);
+          //set data
+          setIsCropping(false);
+          setShowMasks(true);
+          const transformed_masks = result.masks.map((mask: any, index: number) => {
+            return {
+              ...mask,
+              originalCropCoords: cropCoordinates,
+              cropBox: {...cropBox},
+              displayRect: {
+                width: displayRect.width,
+                height: displayRect.height,
+              },
+              index: index
+            };
+          });
+          setMasks(transformed_masks)
+          alert(`Found ${result.masks.length} objects! Select masks to edit.`);
+          return result;
+        } catch(error) {
+          console.error('error in packaging payload to backend: ', error);
+          return;
+        }
+    }
+  }, [cropBox, pageNum, pdfDoc]);
+
+    //helper func for crop
+    const getRelativeMousePosition = useCallback((e: React.MouseEvent) => {
+      if (!canvasRef.current) return { x: 0, y: 0 };
+      
+      const rect = canvasRef.current.getBoundingClientRect();
+      return {
+        x: (e.clientX - rect.left) / pdfCssScale,
+        y: (e.clientY - rect.top) / pdfCssScale
+      };
+    }, [pdfCssScale]);
 
   //pan functions
   const handleMouseDown = (e: React.MouseEvent) => {

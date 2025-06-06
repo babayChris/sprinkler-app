@@ -6,11 +6,34 @@ import './App.css'
 import SideBar from './components/Sidebar.tsx'
 import PDFViewer from './components/PDFRenderer.tsx'
 
+
+
+
 interface PageInputProps {
   pageNum: number;
   setPageNum: (page: number) => void;
   maxPages: number;
 }
+const architecturalScales = [
+  '3" = 1\'-0"',       // 1:4 ratio
+  '1 1/2" = 1\'-0"',   // 1:8 ratio  
+  '1" = 1\'-0"',       // 1:12 ratio
+  '3/4" = 1\'-0"',     // 1:16 ratio
+  '1/2" = 1\'-0"',     // 1:24 ratio
+  '1/4" = 1\'-0"',     // 1:48 ratio (most common)
+  '1/8" = 1\'-0"',     // 1:96 ratio
+  '1/16" = 1\'-0"',    // 1:192 ratio
+  '1/32" = 1\'-0"'     // 1:384 ratio
+];
+
+
+function convertCoords(input: {x: number, y: number}): {
+// input some coord on screen
+
+
+}
+
+
 const PageInput: React.FC<PageInputProps> = ({ pageNum, setPageNum, maxPages }) => {
   const [inputValue, setInputValue] = useState<string>(pageNum.toString());
 
@@ -80,8 +103,13 @@ function AppContent() {
       </div>
     </div>
     {/* bottom bar (page control, view control, scale, page dims)*/}
-    <div className='fixed bottom-0 left-0 w-screen h-9 bg-gray-700 shadow-2xs items-center'>
-      <div className='absolute right-3 h-full w-auto flex flex-row gap-1 items-center justify-between'>
+    <div className='fixed bottom-0 left-0 w-screen h-9 bg-gray-700 shadow-2xs items-center flex-row flex'>
+      {/* page Dims */}
+      <div className='border-2 flex h-full w-15 ml-auto'>
+        
+      </div>
+      {/* page control */}
+      <div className='h-full w-auto flex flex-row gap-1 items-center justify-between mr-3'>
         {/* page num control */}
         <MdKeyboardDoubleArrowLeft 
           className='h-5 w-5 hover:bg-gray-900 hover:rounded cursor-pointer flex items-center justify-center' 
